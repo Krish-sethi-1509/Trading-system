@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NSE/BSE Regime Detection Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css" />
+<script src="/static/vendor/chart.umd.js"></script>
+<script src="/static/vendor/lightweight-charts.js"></script>
+</head>
+<body>
+  <div id="index-strip" class="index-strip"></div>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div class="brand-text">
+        <span class="brand-name">Regime Terminal</span>
+        <span class="brand-sub">NSE / BSE · Explainable Regime Detection</span>
+      </div>
+    </div>
+
+    <div class="global-search">
+      <input id="search-box" type="text" placeholder="Search NSE/BSE company or symbol…" autocomplete="off" />
+      <div id="search-results" class="search-results"></div>
+    </div>
+
+    <button id="compare-toggle" class="compare-toggle hidden">+ Compare</button>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <h3>Watchlist</h3>
+      <ul id="watchlist" class="watchlist"></ul>
+      <p id="watchlist-empty" class="watchlist-empty">Search a stock above and star it to pin it here.</p>
+    </aside>
+
+    <main id="dashboard" class="dashboard hidden">
+      <div class="dashboard-row">
+      <div class="chart-zone">
+        <div class="symbol-header">
+          <div class="symbol-id">
+            <h1 id="q-symbol">—</h1>
+            <button id="watchlist-btn" class="watchlist-btn" title="Add to watchlist">☆</button>
+            <span id="q-company" class="company-name">—</span>
+          </div>
+          <span id="q-market-status" class="badge">—</span>
+        </div>
+
+        <div class="price-line">
+          <span id="q-price" class="price-value">—</span>
+          <span id="q-change" class="change">—</span>
+        </div>
+
+        <div id="compare-panel" class="compare-panel hidden">
+          <input id="compare-box" type="text" placeholder="Search a stock to compare…" autocomplete="off" />
+          <div id="compare-results" class="search-results"></div>
+          <span id="compare-active" class="compare-active hidden"></span>
+        </div>
+
+        <div class="chart-toolbar">
+          <div id="period-pills" class="period-pills"></div>
+          <button id="export-btn" class="export-btn">Export CSV</button>
+        </div>
+        <p id="intraday-note" class="intraday-note hidden"></p>
+
+        <div class="chart-container">
+          <div id="chart-loading" class="chart-loading hidden"><div class="spinner"></div></div>
+          <div id="price-chart" class="candle-chart"></div>
+        </div>
+
+        <div class="legend">
+          <span class="legend-item"><i style="background:#1fb45c"></i>Bull Trend</span>
+          <span class="legend-item"><i style="background:#e5484d"></i>Bear Trend</span>
+          <span class="legend-item"><i style="background:#f2b134"></i>High Volatility</span>
+          <span class="legend-item"><i style="background:#64748b"></i>Range / Sideways</span>
+          <span class="legend-item"><span class="marker-sample buy">▲</span>Buy signal</span>
+          <span class="legend-item"><span class="marker-sample sell">▼</span>Sell signal</span>
+          <span class="legend-item compare-legend hidden" id="compare-legend"><i style="background:#38bdf8"></i><span id="compare-legend-label">Comparison</span></span>
+        </div>
+
+      <div class="panel backtest-panel">
+        <div class="backtest-header">
+          <h4>Strategy Comparison — Adaptive vs Momentum vs Mean Reversion vs Buy &amp; Hold</h4>
+          <span class="backtest-note" id="backtest-note">Long-only simulation · no lookahead (trades on prior day's signal) · 0.10% cost per trade · Sharpe uses 6.5% risk-free</span>
+        </div>
+
+        <div class="bt-table-wrap">
+          <table class="bt-table" id="bt-table">
+            <thead><tr><th>Strategy</th><th>Total Return</th><th>CAGR</th><th>Sharpe</th><th>Max Drawdown</th><th>Win Rate</th><th>Trades</th></tr></thead>
+            <tbody id="bt-table-body"><tr><td colspan="7">—</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="chart-container backtest-chart-container">
+          <div id="backtest-loading" class="chart-loading hidden"><div class="spinner"></div></div>
+          <canvas id="backtest-chart"></canvas>
+        </div>
+      </div>
+      </div>
+
+      <div class="side-rail">
+        <div class="panel" id="decision-panel">
+          <h4>AI Decision</h4>
+          <div class="decision-badge" id="decision-badge">—</div>
+
+          <div class="meter">
+            <div class="meter-head"><span>Confidence</span><b id="decision-confidence">—</b></div>
+            <div class="bar-track"><div class="bar-fill" id="confidence-bar"></div></div>
+          </div>
+          <div class="meter">
+            <div class="meter-head"><span>Recommended Exposure</span><b id="decision-exposure">—</b></div>
+            <div class="bar-track"><div class="bar-fill exposure-fill" id="exposure-bar"></div></div>
+          </div>
+
+          <div class="kv-block"><span>Strategy</span><b id="decision-strategy">—</b></div>
+          <div class="stat-row"><span>Risk</span><b id="decision-risk">—</b></div>
+
+          <div class="decision-sublabel">Confidence Breakdown</div>
+          <div class="stat-row small"><span>Trend Strength</span><b id="conf-trend">—</b></div>
+          <div class="stat-row small"><span>Volatility Clarity</span><b id="conf-vol">—</b></div>
+          <div class="stat-row small"><span>Momentum Agreement</span><b id="conf-momentum">—</b></div>
+          <div class="stat-row small"><span>Regime Consistency</span><b id="conf-consistency">—</b></div>
+
+          <div class="decision-sublabel">Why?</div>
+          <ul class="decision-reasons" id="decision-reasons"></ul>
+          <div class="source-tag">Educational simulation — not financial advice.</div>
+        </div>
+
+        <div class="panel">
+          <h4>Session</h4>
+          <div class="stat-row"><span>Open</span><b id="q-open">—</b></div>
+          <div class="stat-row"><span>High</span><b id="q-high">—</b></div>
+          <div class="stat-row"><span>Low</span><b id="q-low">—</b></div>
+          <div class="stat-row"><span>Prev Close</span><b id="q-prevclose">—</b></div>
+          <div class="source-tag" id="q-source">—</div>
+        </div>
+
+        <div class="panel" id="regime-panel">
+          <h4>Detected Regime</h4>
+          <div class="regime-badge" id="regime-badge">—</div>
+          <p id="regime-strategy" class="regime-strategy">—</p>
+          <p id="regime-reason" class="regime-reason">—</p>
+        </div>
+
+        <div class="panel" id="indicators-panel">
+          <h4>Technical Indicators</h4>
+          <div id="indicators-body">
+            <p class="indicators-empty">Loading…</p>
+          </div>
+        </div>
+
+        <div class="panel compare-regime-card hidden" id="compare-regime-card">
+          <h4>Comparison Regime</h4>
+          <div class="regime-badge" id="compare-regime-badge">—</div>
+          <p id="compare-regime-symbol" class="regime-strategy">—</p>
+          <p id="compare-regime-reason" class="regime-reason">—</p>
+        </div>
+      </div>
+      </div>
+
+    </main>
+  </div>
+
+  <p id="status-msg" class="status-msg"></p>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
