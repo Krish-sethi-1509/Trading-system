@@ -294,8 +294,8 @@ async function refreshForTimeframe(symbol) {
   const isDaily = currentTf.interval === "1d";
   intradayNote.classList.toggle("hidden", isDaily);
   intradayNote.textContent =
-    `Regime, indicators, AI Decision and BUY/SELL signals below are calculated on ${currentTf.label} bars. ` +
-    `The strategy backtest always uses daily bars.`;
+    `Regime, indicators, AI Decision, Risk Management and BUY/SELL signals below are calculated on ${currentTf.label} bars. ` +
+    `The strategy backtest and Performance by Regime always use daily bars.`;
 
   await Promise.all([
     loadChartAndRegime(symbol),
@@ -328,6 +328,47 @@ async function loadAnalysisPanels(symbol) {
     renderIndicatorsPanel(null);
   }
   loadDecision(symbol, qs);
+  loadRiskPanel(symbol, qs);
+}
+
+// ================= RISK MANAGEMENT =================
+
+async function loadRiskPanel(symbol, qs) {
+  try {
+    const res = await fetch(`${API}/api/risk/${symbol}?${qs}`);
+    if (!res.ok) throw new Error("risk fetch failed");
+    renderRiskPanel(await res.json());
+  } catch (e) {
+    renderRiskPanel(null);
+  }
+}
+
+function renderRiskPanel(r) {
+  const ids = ["risk-entry", "risk-stop", "risk-target", "risk-rr", "risk-shares",
+               "risk-position-value", "risk-position-pct", "risk-amount"];
+  const capNote = document.getElementById("risk-cap-note");
+
+  if (!r) {
+    ids.forEach((id) => (document.getElementById(id).textContent = "—"));
+    capNote.classList.add("hidden");
+    return;
+  }
+
+  document.getElementById("risk-entry").textContent = `₹${r.entry_price.toFixed(2)}`;
+  document.getElementById("risk-stop").textContent = `₹${r.stop_loss.toFixed(2)} (${r.stop_distance_pct}%)`;
+  document.getElementById("risk-target").textContent = `₹${r.take_profit.toFixed(2)}`;
+  document.getElementById("risk-rr").textContent = r.risk_reward_ratio;
+  document.getElementById("risk-shares").textContent = r.shares.toLocaleString("en-IN");
+  document.getElementById("risk-position-value").textContent = `₹${r.position_value.toLocaleString("en-IN")}`;
+  document.getElementById("risk-position-pct").textContent = `${r.position_pct_of_portfolio}%`;
+  document.getElementById("risk-amount").textContent = `₹${r.risk_amount.toLocaleString("en-IN")}`;
+
+  if (r.capped_by_exposure) {
+    capNote.textContent = `Position size capped at ${r.exposure_cap_pct}% exposure — the AI Decision's regime call, not the risk formula, is the binding limit here.`;
+    capNote.classList.remove("hidden");
+  } else {
+    capNote.classList.add("hidden");
+  }
 }
 
 // ================= SELECTING A SYMBOL =================
@@ -659,6 +700,36 @@ async function loadBacktest(symbol) {
   } finally {
     backtestLoading.classList.add("hidden");
   }
+  loadRegimePerformance(symbol);
+}
+
+async function loadRegimePerformance(symbol) {
+  const body = document.getElementById("regime-perf-body");
+  try {
+    const res = await fetch(`${API}/api/regime-performance/${symbol}?period=5y`);
+    if (!res.ok) throw new Error("regime-performance fetch failed");
+    renderRegimePerformanceTable(await res.json());
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="6">Not enough history to break this down.</td></tr>`;
+  }
+}
+
+function renderRegimePerformanceTable(data) {
+  const body = document.getElementById("regime-perf-body");
+  const fmtPct = (v, sign) => (v == null ? "—" : `${sign && v >= 0 ? "+" : ""}${v.toFixed(2)}%`);
+  body.innerHTML = data.rows.map((row) => {
+    const color = REGIME_COLORS[row.regime] || "#808a9c";
+    const retCls = row.total_return_pct == null ? "" : row.total_return_pct >= 0 ? "up" : "down";
+    const avgCls = row.avg_daily_return_pct == null ? "" : row.avg_daily_return_pct >= 0 ? "up" : "down";
+    return `<tr>
+      <td><span class="swatch" style="background:${color}"></span>${row.regime}</td>
+      <td>${row.days}</td>
+      <td>${row.pct_of_days}%</td>
+      <td class="${retCls}">${fmtPct(row.total_return_pct, true)}</td>
+      <td class="${avgCls}">${row.avg_daily_return_pct == null ? "—" : fmtPct(row.avg_daily_return_pct, true)}</td>
+      <td>${row.positive_day_pct == null ? "—" : `${row.positive_day_pct.toFixed(1)}%`}</td>
+    </tr>`;
+  }).join("");
 }
 
 const STRATEGY_STYLE = {

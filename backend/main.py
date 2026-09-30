@@ -11,6 +11,8 @@ from backtest import run_backtest
 from indicators import current_indicator_summary
 from decision import build_decision
 from signals import compute_signals
+from risk import build_risk_plan
+from regime_performance import regime_performance
 
 
 def _clean_records(df: pd.DataFrame) -> list:
@@ -141,6 +143,51 @@ def get_decision(symbol: str, period: str = "1y", interval: str = "1d"):
         raise HTTPException(status_code=404, detail="No historical data found for symbol")
     try:
         result = build_decision(df, interval)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    result["symbol"] = symbol.upper()
+    return result
+
+
+@app.get("/api/risk/{symbol}")
+def get_risk(
+    symbol: str,
+    period: str = "1y",
+    interval: str = "1d",
+    portfolio_value: float = 100000.0,
+    risk_pct: float = 1.0,
+    atr_multiplier: float = 2.0,
+    reward_multiple: float = 2.0,
+):
+    """
+    Risk Management card: ATR-based stop-loss/take-profit and a fixed-
+    fractional position size for a hypothetical new long entry, capped by
+    the AI Decision's regime-based exposure limit. See risk.py.
+    """
+    fetch_period = _analysis_period(period, interval)
+    df = nse_client.get_history(symbol, period=fetch_period, interval=interval)
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No historical data found for symbol")
+    try:
+        result = build_risk_plan(df, interval, portfolio_value, risk_pct, atr_multiplier, reward_multiple)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    result["symbol"] = symbol.upper()
+    return result
+
+
+@app.get("/api/regime-performance/{symbol}")
+def get_regime_performance(symbol: str, period: str = "5y"):
+    """
+    Performance-by-regime breakdown (always daily bars, like the backtest,
+    since this needs years of history to say anything meaningful about any
+    one regime). See regime_performance.py.
+    """
+    df = nse_client.get_history(symbol, period=period, interval="1d")
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No historical data found for symbol")
+    try:
+        result = regime_performance(df, interval="1d")
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     result["symbol"] = symbol.upper()

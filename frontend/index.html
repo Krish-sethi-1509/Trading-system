@@ -100,6 +100,19 @@
           <canvas id="backtest-chart"></canvas>
         </div>
       </div>
+
+      <div class="panel">
+        <div class="backtest-header">
+          <h4>Performance by Market Regime</h4>
+          <span class="backtest-note">The stock's own daily return, compounded over every day classified as each regime — checks whether the regime labels actually carry information</span>
+        </div>
+        <div class="bt-table-wrap">
+          <table class="bt-table" id="regime-perf-table">
+            <thead><tr><th>Regime</th><th>Days</th><th>% of Days</th><th>Total Return</th><th>Avg Daily Return</th><th>Positive Days</th></tr></thead>
+            <tbody id="regime-perf-body"><tr><td colspan="6">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
       </div>
 
       <div class="side-rail">
@@ -137,6 +150,22 @@
           <div class="stat-row"><span>Low</span><b id="q-low">—</b></div>
           <div class="stat-row"><span>Prev Close</span><b id="q-prevclose">—</b></div>
           <div class="source-tag" id="q-source">—</div>
+        </div>
+
+        <div class="panel" id="risk-panel">
+          <h4>Risk Management</h4>
+          <div class="stat-row"><span>Entry (last close)</span><b id="risk-entry">—</b></div>
+          <div class="stat-row"><span>Stop Loss</span><b id="risk-stop" class="down">—</b></div>
+          <div class="stat-row"><span>Take Profit</span><b id="risk-target" class="up">—</b></div>
+          <div class="stat-row"><span>Risk : Reward</span><b id="risk-rr">—</b></div>
+
+          <div class="decision-sublabel">Position Size · ₹1,00,000 paper portfolio, 1% risk</div>
+          <div class="stat-row"><span>Shares</span><b id="risk-shares">—</b></div>
+          <div class="stat-row"><span>Position Value</span><b id="risk-position-value">—</b></div>
+          <div class="stat-row"><span>% of Portfolio</span><b id="risk-position-pct">—</b></div>
+          <div class="stat-row"><span>Risk Amount</span><b id="risk-amount">—</b></div>
+          <p id="risk-cap-note" class="indicators-empty hidden"></p>
+          <div class="source-tag">Educational simulation — not financial advice.</div>
         </div>
 
         <div class="panel" id="regime-panel">
