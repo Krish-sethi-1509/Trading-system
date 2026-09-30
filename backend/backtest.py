@@ -161,6 +161,17 @@ def evaluate(returns: pd.Series, position: pd.Series, cost_pct: float = COST_PCT
 
     legs = _trade_legs(position, net)
     win_rate = (sum(1 for x in legs if x > 0) / len(legs) * 100) if legs else None
+    wins = [x for x in legs if x > 0]
+    losses = [x for x in legs if x < 0]
+    downside = net.clip(upper=0)
+    downside_std = float(np.sqrt((downside ** 2).mean()))
+    sortino = ((float(net.mean()) - risk_free_pct / 100 / 252) / downside_std * math.sqrt(252)) if n > 1 and downside_std > 0 else None
+    gross_profit, gross_loss = sum(wins), abs(sum(losses))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else (None if gross_profit == 0 else float("inf"))
+    max_consecutive_losses = consecutive = 0
+    for leg in legs:
+        consecutive = consecutive + 1 if leg < 0 else 0
+        max_consecutive_losses = max(max_consecutive_losses, consecutive)
 
     stats = {
         "total_return_pct": _r(total_return),
@@ -170,13 +181,18 @@ def evaluate(returns: pd.Series, position: pd.Series, cost_pct: float = COST_PCT
         "win_rate_pct": _r(win_rate, 1),
         "num_trades": len(legs),
         "avg_exposure_pct": _r(float(position.mean()) * 100, 1),
+        "sortino": _r(sortino),
+        "profit_factor": _r(profit_factor),
+        "average_winning_trade_pct": _r(float(np.mean(wins)) * 100) if wins else None,
+        "average_losing_trade_pct": _r(float(np.mean(losses)) * 100) if losses else None,
+        "max_consecutive_losses": max_consecutive_losses,
     }
     return {"equity": equity, "net_returns": net, "stats": stats}
 
 
 # ---------------- main entry point ----------------
 
-def run_backtest(df: pd.DataFrame) -> dict:
+def run_backtest(df: pd.DataFrame, benchmark_df: pd.DataFrame | None = None) -> dict:
     """
     df: OHLCV DataFrame indexed by date (nse_client.get_history() output).
     Returns a JSON-safe dict with equity curves + metrics for all four strategies.
@@ -214,11 +230,21 @@ def run_backtest(df: pd.DataFrame) -> dict:
             "stats": res["stats"],
         }
 
+    benchmark = None
+    if benchmark_df is not None and not benchmark_df.empty:
+        benchmark_returns = benchmark_df["Close"].pct_change().reindex(window.index)
+        valid = benchmark_returns.notna()
+        if valid.sum() >= 2:
+            benchmark_result = evaluate(benchmark_returns[valid], pd.Series(1.0, index=benchmark_returns[valid].index))
+            equity_by_date = benchmark_result["equity"].to_dict()
+            benchmark = {"label": "NIFTY 50 Benchmark", "equity": [_r(equity_by_date.get(date), 4) for date in window.index], "stats": benchmark_result["stats"]}
+
     dates = [str(d.date()) if hasattr(d, "date") else str(d) for d in window.index]
     return {
         "dates": dates,
         "regime": [r if isinstance(r, str) else None for r in window["regime"]],
         "strategies": strategies,
+        "benchmark": benchmark,
         "days_simulated": len(window),
         "assumptions": {
             "cost_pct_per_trade": COST_PCT,
@@ -227,3 +253,4 @@ def run_backtest(df: pd.DataFrame) -> dict:
         },
         "position_key": POSITION_BY_REGIME,
     }
+

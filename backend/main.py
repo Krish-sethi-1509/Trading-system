@@ -13,6 +13,7 @@ from decision import build_decision
 from signals import compute_signals
 from risk import build_risk_plan
 from regime_performance import regime_performance
+from ml_regime import evaluate_regime_model, predict_regime
 
 
 def _clean_records(df: pd.DataFrame) -> list:
@@ -93,6 +94,34 @@ def get_regime(symbol: str, period: str = "1y", interval: str = "1d"):
     return summary
 
 
+@app.get("/api/ml-regime/{symbol}")
+def get_ml_regime(symbol: str, period: str = "5y", interval: str = "1d"):
+    """Latest Random Forest prediction, trained on prior labeled observations."""
+    df = nse_client.get_history(symbol, period=period, interval=interval)
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No historical data found for symbol")
+    try:
+        result = predict_regime(df, interval)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    result["symbol"] = symbol.upper()
+    return result
+
+
+@app.get("/api/ml-evaluation/{symbol}")
+def get_ml_evaluation(symbol: str, period: str = "5y", interval: str = "1d"):
+    """Chronological holdout metrics and feature importance for this symbol."""
+    df = nse_client.get_history(symbol, period=period, interval=interval)
+    if df.empty:
+        raise HTTPException(status_code=404, detail="No historical data found for symbol")
+    try:
+        result = evaluate_regime_model(df, interval)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    result["symbol"] = symbol.upper()
+    return result
+
+
 @app.get("/api/regime-history/{symbol}")
 def get_regime_history(symbol: str, period: str = "1y", interval: str = "1d"):
     """Full regime timeline, used to shade the chart by regime."""
@@ -105,7 +134,7 @@ def get_regime_history(symbol: str, period: str = "1y", interval: str = "1d"):
     analyzed = analyzed.reset_index()
     date_col = "Date" if "Date" in analyzed.columns else analyzed.columns[0]
     analyzed[date_col] = analyzed[date_col].astype(str)
-    cols = [date_col, "Open", "High", "Low", "Close", "regime", "strategy", "reason", "slope_pct", "volatility", "signal"]
+    cols = [date_col, "Open", "High", "Low", "Close", "regime", "strategy", "selected_strategy", "exposure_pct", "trade_action", "reason", "slope_pct", "volatility", "signal"]
     return _clean_records(analyzed[cols].rename(columns={date_col: "date"}))
 
 
@@ -210,13 +239,17 @@ def get_backtest(symbol: str, period: str = "1y"):
     if df.empty:
         raise HTTPException(status_code=404, detail="No historical data found for symbol")
     try:
-        result = run_backtest(df)
+        benchmark = nse_client.get_history("^NSEI", period=period, interval="1d")
+        result = run_backtest(df, benchmark_df=benchmark)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     result["symbol"] = symbol.upper()
+    if result.get("benchmark") is None:
+        result["benchmark_note"] = "NIFTY 50 benchmark data was unavailable for this period."
     return result
 
 
 @app.get("/")
 def root():
     return FileResponse("../frontend/index.html")
+

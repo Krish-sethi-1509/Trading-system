@@ -282,6 +282,10 @@ class NSEClient:
         it bubble up as an unhandled 500.
         """
         try:
+            # Yahoo index symbols (e.g. ^NSEI) already identify their exchange
+            # series and must not receive an equity suffix.
+            if symbol.startswith("^"):
+                return yf.Ticker(symbol).history(period=period, interval=interval)
             ticker = yf.Ticker(f"{symbol}.NS")
             df = ticker.history(period=period, interval=interval)
             if df.empty:
@@ -295,3 +299,4 @@ class NSEClient:
 
 
 nse_client = NSEClient()
+

@@ -39,6 +39,14 @@ import numpy as np
 
 from timeframe import bars_per_year, trend_threshold_pct, label as tf_label, fmt_ts
 
+SELECTED_STRATEGY = {
+    "Bull Trend": "Momentum",
+    "Bear Trend": "Defensive",
+    "High Volatility": "Mean Reversion (reduced size)",
+    "Range / Sideways": "Mean Reversion",
+}
+EXPOSURE_BY_REGIME = {"Bull Trend": 100, "Bear Trend": 0, "High Volatility": 25, "Range / Sideways": 50}
+
 
 def _annualized_vol(returns: pd.Series, window: int, bpy: float = 252) -> pd.Series:
     return returns.rolling(window).std() * np.sqrt(bpy)
@@ -133,6 +141,10 @@ def detect_regimes(df: pd.DataFrame, trend_window=20, vol_window=20, interval="1
 
     out["regime"] = regimes
     out["strategy"] = strategies
+    out["selected_strategy"] = out["regime"].map(SELECTED_STRATEGY)
+    out["exposure_pct"] = out["regime"].map(EXPOSURE_BY_REGIME)
+    changes = out["exposure_pct"].diff().fillna(0)
+    out["trade_action"] = np.select([changes > 0, changes < 0], ["BUY / INCREASE", "REDUCE / EXIT"], default="HOLD")
     out["reason"] = reasons
     out["vol_median"] = vol_median_series
     return out
@@ -152,9 +164,13 @@ def current_regime_summary(df: pd.DataFrame, interval="1d") -> dict:
     return {
         "regime": last["regime"],
         "strategy": last["strategy"],
+        "selected_strategy": last["selected_strategy"],
+        "exposure_pct": int(last["exposure_pct"]),
+        "trade_action": last["trade_action"],
         "reason": last["reason"],
         "slope_pct": round(float(last["slope_pct"]), 3),
         "volatility_pct": round(float(last["volatility"]), 2),
         "timeframe": tf_label(interval),
         "as_of": fmt_ts(last.name, interval),
     }
+

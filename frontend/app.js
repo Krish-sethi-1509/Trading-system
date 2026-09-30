@@ -309,6 +309,8 @@ async function loadAnalysisPanels(symbol) {
   const requests = [
     fetch(`${API}/api/regime/${symbol}?${qs}`),
     fetch(`${API}/api/indicators/${symbol}?${qs}`),
+    fetch(`${API}/api/ml-regime/${symbol}?period=5y&interval=${currentTf.interval}`),
+    fetch(`${API}/api/ml-evaluation/${symbol}?period=5y&interval=${currentTf.interval}`),
   ];
   if (compareSymbol) requests.push(fetch(`${API}/api/regime/${compareSymbol}?${qs}`));
   try {
@@ -319,8 +321,10 @@ async function loadAnalysisPanels(symbol) {
       renderRegimeCard({ regime: "—", strategy: "n/a", reason: "Not enough data on this timeframe to classify a regime." });
     }
     renderIndicatorsPanel(responses[1].ok ? await responses[1].json() : null);
-    if (compareSymbol && responses[2] && responses[2].ok) {
-      renderCompareRegimeCard(await responses[2].json());
+    renderMLRegime(responses[2]?.ok ? await responses[2].json() : null,
+                   responses[3]?.ok ? await responses[3].json() : null);
+    if (compareSymbol && responses[4] && responses[4].ok) {
+      renderCompareRegimeCard(await responses[4].json());
     } else {
       document.getElementById("compare-regime-card").classList.add("hidden");
     }
@@ -458,11 +462,18 @@ async function loadChartAndRegime(symbol) {
 
     lastHistory = { symbol, history, compareSymbol, compareHistory };
     renderChart(history, compareHistory);
+    renderSwitchHistory(history);
   } catch (e) {
     setStatus("Could not load chart data for this symbol/timeframe.", true);
   } finally {
     chartLoading.classList.add("hidden");
   }
+}
+
+function renderSwitchHistory(history) {
+  const body = document.getElementById("switch-history-body");
+  const changes = history.filter((row, i) => row.regime && (i === 0 || row.regime !== history[i - 1].regime)).slice(-10).reverse();
+  body.innerHTML = changes.length ? changes.map((row) => `<tr><td>${row.date}</td><td>${row.regime}</td><td>${row.selected_strategy || "—"}</td><td>${row.exposure_pct == null ? "—" : `${row.exposure_pct}%`}</td><td>${row.trade_action || "HOLD"}</td></tr>`).join("") : `<tr><td colspan="5">No regime transitions in this period.</td></tr>`;
 }
 
 function renderRegimeCard(r) {
@@ -473,6 +484,33 @@ function renderRegimeCard(r) {
   badge.style.border = `1px solid ${REGIME_COLORS[r.regime] || "#444"}`;
   document.getElementById("regime-strategy").textContent = `Suggested style: ${r.strategy}`;
   document.getElementById("regime-reason").textContent = r.reason;
+  document.getElementById("switch-strategy").textContent = r.selected_strategy || r.strategy || "—";
+  document.getElementById("switch-exposure").textContent = r.exposure_pct == null ? "—" : `${r.exposure_pct}%`;
+  document.getElementById("switch-trade").textContent = r.trade_action || "—";
+}
+
+function renderMLRegime(prediction, evaluation) {
+  const badge = document.getElementById("ml-regime-badge");
+  if (!prediction) {
+    badge.textContent = "Unavailable";
+    document.getElementById("ml-confidence").textContent = "—";
+    document.getElementById("ml-agreement").textContent = "Insufficient history";
+    document.getElementById("ml-probabilities").textContent = "—";
+    document.getElementById("ml-features").textContent = "—";
+    document.getElementById("ml-evaluation").textContent = "ML requires sufficient multi-regime history.";
+    return;
+  }
+  badge.textContent = prediction.predicted_regime;
+  const color = REGIME_COLORS[prediction.predicted_regime] || "#808a9c";
+  badge.style.background = color + "26";
+  badge.style.color = color;
+  badge.style.border = `1px solid ${color}`;
+  document.getElementById("ml-confidence").textContent = `${(prediction.confidence * 100).toFixed(1)}%`;
+  document.getElementById("ml-agreement").textContent = `${prediction.comparison} · rule: ${prediction.rule_based_regime}`;
+  document.getElementById("ml-probabilities").textContent = Object.entries(prediction.class_probabilities).map(([k, v]) => `${k}: ${(v * 100).toFixed(1)}%`).join(" · ");
+  document.getElementById("ml-features").textContent = prediction.important_features.map((x) => `${x.feature} (${(x.importance * 100).toFixed(1)}%)`).join(" · ");
+  const m = evaluation?.metrics;
+  document.getElementById("ml-evaluation").textContent = m ? `Held-out test · accuracy ${(m.accuracy * 100).toFixed(1)}% · precision ${(m.precision_macro * 100).toFixed(1)}% · recall ${(m.recall_macro * 100).toFixed(1)}% · F1 ${(m.f1_macro * 100).toFixed(1)}% · ${evaluation.split.test_rows} test rows` : "Held-out evaluation unavailable for this history.";
 }
 
 function renderCompareRegimeCard(r) {
@@ -747,8 +785,14 @@ function renderBacktestTable(data) {
     { key: "total_return_pct", fmt: (v) => fmtPct(v, true), color: true, best: "max" },
     { key: "cagr_pct", fmt: (v) => fmtPct(v, true), color: true, best: "max" },
     { key: "sharpe", fmt: (v) => (v == null ? "—" : v.toFixed(2)), color: true, best: "max" },
+    { key: "sortino", fmt: (v) => (v == null ? "—" : v.toFixed(2)), color: true, best: "max" },
     { key: "max_drawdown_pct", fmt: (v) => fmtPct(v, false), color: false, best: "max" }, // closest to 0 is best
     { key: "win_rate_pct", fmt: (v) => (v == null ? "—" : `${v.toFixed(1)}%`), color: false, best: null },
+    { key: "profit_factor", fmt: (v) => (v == null ? "—" : v.toFixed(2)), color: false, best: "max" },
+    { key: "average_winning_trade_pct", fmt: (v) => (v == null ? "—" : `${v.toFixed(2)}%`), color: true, best: null },
+    { key: "average_losing_trade_pct", fmt: (v) => (v == null ? "—" : `${v.toFixed(2)}%`), color: false, best: null },
+    { key: "max_consecutive_losses", fmt: (v) => String(v ?? "—"), color: false, best: null },
+    { key: "avg_exposure_pct", fmt: (v) => (v == null ? "—" : `${v.toFixed(1)}%`), color: false, best: null },
     { key: "num_trades", fmt: (v) => String(v), color: false, best: null },
   ];
   // Highlight the best value in each column (ignoring nulls).
@@ -770,6 +814,11 @@ function renderBacktestTable(data) {
     return `<tr class="${key === "adaptive" ? "is-adaptive" : ""}"><td><span class="swatch" style="background:${st.color}"></span>${s.label}</td>${cells}</tr>`;
   }).join("");
 
+  if (data.benchmark) {
+    const s = data.benchmark;
+    body.innerHTML += `<tr><td><span class="swatch" style="background:#e879f9"></span>${s.label}</td>${cols.map((c) => `<td>${c.fmt(s.stats[c.key])}</td>`).join("")}</tr>`;
+  }
+
   const a = data.assumptions;
   document.getElementById("backtest-note").textContent =
     `Long-only simulation · no lookahead (trades on prior day's signal) · ${a.cost_pct_per_trade}% cost per trade · ` +
@@ -786,8 +835,8 @@ function renderBacktestChart(data) {
     type: "line",
     data: {
       labels,
-      datasets: Object.entries(data.strategies).map(([key, strat]) => {
-        const st = STRATEGY_STYLE[key];
+      datasets: [...Object.entries(data.strategies), ...(data.benchmark ? [["nifty_50", data.benchmark]] : [])].map(([key, strat]) => {
+        const st = STRATEGY_STYLE[key] || { color: "#e879f9", width: 1.8, dash: [6, 3] };
         return {
           label: strat.label,
           // Equity is growth of ₹1 — shown as % gain/loss
@@ -877,3 +926,4 @@ async function loadIndices() {
 renderWatchlist();
 loadIndices();
 setInterval(loadIndices, 30000);
+
